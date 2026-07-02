@@ -55,6 +55,7 @@ for (i in seq_len(nrow(reg))) {
   d <- fetch_dataset(r$moe_id, r$parameter, r$label, r$unit_id)
   cat(sprintf("  %s %s(%s): %s rows\n", r$moe_id, r$canon, r$parameter, if (is.null(d)) 0 else nrow(d)))
   if (is.null(d) || !nrow(d)) next
+  archive_raw(sprintf("bc/%s-%s", r$moe_id, r$canon), run_id, d)   # immutable raw landing
 
   dbExecute(con, "INSERT INTO okhydromet.station(station_uid,bc_aquarius_loc_id,name,operator,status,basin)
     VALUES($1,$2,$3,'BC','active','Okanagan')

@@ -13,6 +13,7 @@ run_id <- dbGetQuery(con, "INSERT INTO okhydromet.pull_run(source,started_ts,sta
                            VALUES('wsc-daily', now(), 'running') RETURNING run_id")$run_id
 
 raw  <- geomet_realtime(ids, since = Sys.time() - 3 * 86400)
+if (nrow(raw)) archive_raw("wsc-daily", run_id, raw)          # immutable raw landing
 long <- if (nrow(raw)) reshape_obs(raw) else raw
 n    <- if (nrow(long)) upsert_wsc(con, long, run_id) else 0L
 

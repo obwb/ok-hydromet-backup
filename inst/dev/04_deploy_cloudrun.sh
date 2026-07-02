@@ -42,7 +42,9 @@ deploy_job () {
     --service-account="$SA" \
     --set-cloudsql-instances="$CONN" \
     --set-secrets="DB_PASS=okhydromet-db-pw:latest" \
-    --set-env-vars="MODE=${MODE},DB_HOST=/cloudsql/${CONN},DB_NAME=okhydromet,DB_USER=okhydromet_app" \
+    --set-env-vars="MODE=${MODE},DB_HOST=/cloudsql/${CONN},DB_NAME=okhydromet,DB_USER=okhydromet_app,RAW_MOUNT=/raw" \
+    --add-volume=name=raw,type=cloud-storage,bucket=okhydromet-raw-ne1 \
+    --add-volume-mount=volume=raw,mount-path=/raw \
     --max-retries=2 --task-timeout=900 --memory=1Gi
 }
 deploy_job okhydromet-etl-daily  daily
