@@ -1,0 +1,19 @@
+# secrets / credentials
+dashboard/db_config.R
+dashboard/db-*.pem
+*.pem
+
+# local data / caches
+data/
+*.duckdb
+*.duckdb.wal
+
+# internal docs & correspondence (NOT for public repo) — keep index.html
+docs/*.md
+docs/*.pdf
+
+# R / system
+.Rproj.user
+.Rhistory
+.DS_Store
+dashboard/rsconnect/

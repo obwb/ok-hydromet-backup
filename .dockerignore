@@ -1,0 +1,9 @@
+data/
+*.duckdb
+*.duckdb.wal
+data-raw/
+docs/
+inst/
+conf/
+.git/
+scratchpad/

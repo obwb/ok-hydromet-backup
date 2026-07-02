@@ -1,0 +1,3 @@
+moe_id,name,parameter,label,unit_id,canon,units
+08NM0003,Vaseux Creek near the Mouth,Discharge,Telemetry,350,Q,m3/s
+08NM0003,Vaseux Creek near the Mouth,Stage,Telemetry,306,H,m

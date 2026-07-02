@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Okanagan Hydrometric Backup Database</title>
+<meta name="description" content="A sovereign, append-only backup of Okanagan-basin hydrometric data — Water Survey of Canada and BC provincial stations — hosted in Canada.">
+<style>
+  :root{--teal:#0b6b6b;--teal-d:#084f4f;--amber:#e0a800;--ink:#12333a;--paper:#f6f9f9;--line:#dbe7e7}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:var(--paper);line-height:1.6}
+  a{color:var(--teal)}
+  .wrap{max-width:920px;margin:0 auto;padding:0 20px}
+  header{background:linear-gradient(135deg,var(--teal-d),var(--teal));color:#fff;padding:64px 0 56px}
+  header .wrap{position:relative}
+  h1{font-size:2.1rem;margin:0 0 10px;font-weight:800;letter-spacing:-.5px}
+  .sub{font-size:1.15rem;opacity:.92;max-width:640px;margin:0}
+  .tag{display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);
+       padding:4px 12px;border-radius:20px;font-size:.8rem;margin-bottom:18px}
+  .cta{display:inline-flex;align-items:center;gap:8px;margin-top:26px;background:var(--amber);color:#3a2e00;
+       font-weight:700;padding:12px 22px;border-radius:8px;text-decoration:none}
+  .cta:hover{filter:brightness(1.05)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:-34px 0 0}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;text-align:center;
+        box-shadow:0 2px 10px rgba(11,107,107,.06)}
+  .stat b{display:block;font-size:1.5rem;color:var(--teal);font-weight:800}
+  .stat span{font-size:.82rem;color:#557}
+  section{padding:34px 0;border-top:1px solid var(--line)}
+  h2{font-size:1.35rem;margin:0 0 14px;color:var(--teal-d)}
+  ul{padding-left:20px}li{margin:6px 0}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px}
+  .card h3{margin:0 0 8px;font-size:1.05rem}
+  code{background:#eef4f4;padding:2px 6px;border-radius:5px;font-size:.88em}
+  footer{background:var(--ink);color:#cfe3e3;padding:28px 0;font-size:.9rem}
+  footer a{color:#9fd0d0}
+  @media(max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}.cards{grid-template-columns:1fr}h1{font-size:1.7rem}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <span class="tag">OKANAGAN BASIN WATER BOARD · DATA STEWARDSHIP</span>
+    <h1>Okanagan Hydrometric Backup Database</h1>
+    <p class="sub">An independent, sovereign backup of Okanagan-basin streamflow, water-level and
+      water-temperature data — so the region's water tools keep working, whatever happens upstream.</p>
+    <a class="cta" href="https://obwb.shinyapps.io/ok-hydromet-backup/">Open the live dashboard →</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><b>1M+</b><span>observations</span></div>
+    <div class="stat"><b>30+</b><span>stations</span></div>
+    <div class="stat"><b>1915</b><span>earliest record</span></div>
+    <div class="stat"><b>Daily</b><span>updates</span></div>
+  </div>
+
+  <section>
+    <h2>What it is</h2>
+    <p>The Okanagan Basin Water Board maintains a continuously-updated mirror of the hydrometric data
+    for the Okanagan watershed. It brings together <strong>Water Survey of Canada</strong> gauges and
+    <strong>BC provincial / Okanagan Nation Alliance–serviced</strong> stations into one queryable
+    archive, with every value tagged by its source, quality grade and approval level.</p>
+    <p>It exists as a <strong>resilience layer</strong>: if access to the provincial data warehouse is
+    ever interrupted, OBWB's forecasting, drought and water-supply tools keep running from this backup.</p>
+  </section>
+
+  <section>
+    <h2>How it works</h2>
+    <div class="cards">
+      <div class="card"><h3>🇨🇦 Sovereign by design</h3>
+        Stored in <strong>PostgreSQL + PostGIS on Google Cloud, Montréal</strong>
+        (<code>northamerica-northeast1</code>) — all data resident in Canada.</div>
+      <div class="card"><h3>🔄 Always current</h3>
+        Automated jobs pull real-time data daily and run a weekly reconciliation audit that
+        backfills any gaps against the source of record.</div>
+      <div class="card"><h3>📏 Full provenance</h3>
+        Discharge, stage and water temperature — each point carries its grade, approval level and
+        ingest history, plus rating and station metadata.</div>
+      <div class="card"><h3>📚 Deep history</h3>
+        Daily records reach back to <strong>1915</strong> (discharge) and <strong>1943</strong>
+        (water level), alongside the live real-time feed.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Access the data</h2>
+    <p>The data is open. Explore it and download it from the live dashboard:</p>
+    <ul>
+      <li><a href="https://obwb.shinyapps.io/ok-hydromet-backup/">Interactive dashboard</a> — summary,
+        station map, freshness, and pipeline status</li>
+      <li><strong>CSV downloads</strong> — stations, coverage, latest readings and full daily record
+        (on the dashboard's <em>Data Access</em> tab)</li>
+      <li><strong>Read-only database access</strong> for analysts (SQL / R / Python) — available on
+        request from OBWB Water Stewardship</li>
+    </ul>
+    <p style="color:#557;font-size:.9rem">Data sources: Water Survey of Canada (Environment and Climate
+      Change Canada) and the BC Ministry of Environment, as available. Please credit the original
+      source in any reuse.</p>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap">
+    <strong>Okanagan Basin Water Board</strong> — Water Stewardship ·
+    <a href="https://www.obwb.ca">obwb.ca</a><br>
+    A public-good data-resilience project for the Okanagan watershed.
+  </div>
+</footer>
+</body>
+</html>
