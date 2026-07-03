@@ -17,3 +17,4 @@ docs/*.pdf
 .Rhistory
 .DS_Store
 dashboard/rsconnect/
+data-raw/ona_contract_2026.csv
