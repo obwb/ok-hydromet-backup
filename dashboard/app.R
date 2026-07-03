@@ -28,7 +28,13 @@ if (!startsWith(.host, "/")) {
 }
 pool <- do.call(dbPool, .args)
 onStop(function() poolClose(pool))
-Q <- function(sql) dbGetQuery(pool, sql)
+# RPostgres returns counts as integer64, which breaks format(big.mark) and ggplot's
+# round_any. Coerce integer64 columns to numeric at the source.
+Q <- function(sql) {
+  d <- dbGetQuery(pool, sql)
+  for (nm in names(d)) if (inherits(d[[nm]], "integer64")) d[[nm]] <- as.numeric(d[[nm]])
+  d
+}
 Q1 <- function(sql) { v <- Q(sql)[[1]]; if (length(v)) v[1] else NA }
 
 OK_TEAL <- "#0b6b6b"
@@ -91,7 +97,7 @@ ui <- page_navbar(
     layout_columns(
       col_widths = c(8, 4),
       card(card_header("QAQC status by station — approval level of collected points"), full_screen = TRUE,
-           plotlyOutput("ona_qaqc_plot", height = 420)),
+           plotlyOutput("ona_qaqc_plot", height = 620)),
       card(card_header("Project status"), uiOutput("ona_status_summary"))),
     card(card_header("Station audit — data points, record span, QAQC & freshness"), full_screen = TRUE,
          DTOutput("ona_table"))),
@@ -145,7 +151,7 @@ server <- function(input, output, session) {
     disc   = Q1("SELECT count(*) FROM okhydromet.audit_discrepancy WHERE action_taken IS NULL")
   )})
 
-  fmt <- function(x) format(x, big.mark = ",")
+  fmt <- function(x) format(as.numeric(x), big.mark = ",", scientific = FALSE, trim = TRUE)
   output$updated_at <- renderText(paste("Loaded", format(refresh(), "%Y-%m-%d %H:%M")))
   output$kpi_obs    <- renderText(fmt(stats()$obs))
   output$kpi_stn    <- renderText(fmt(stats()$stn))
@@ -163,9 +169,9 @@ server <- function(input, output, session) {
             GROUP BY 1 ORDER BY 1")
     validate(need(nrow(d) > 0, "No recent observations"))
     p <- ggplot(d, aes(d, n)) + geom_col(fill = OK_TEAL) +
-      scale_y_continuous(labels = comma) + labs(x = NULL, y = "observations/day") +
+      scale_y_continuous(labels = comma) + labs(x = NULL, y = "obs / day") +
       theme_minimal(base_size = 12)
-    ggplotly(p) |> config(displayModeBar = FALSE)
+    ggplotly(p) |> layout(margin = list(l = 72, b = 46)) |> config(displayModeBar = FALSE)
   })
 
   # coverage by parameter
@@ -183,7 +189,7 @@ server <- function(input, output, session) {
     p <- ggplot(d, aes(reorder(label, obs), obs, fill = label)) + geom_col() +
       coord_flip() + scale_y_continuous(labels = comma) +
       labs(x = NULL, y = "observations") + guides(fill = "none") + theme_minimal(base_size = 12)
-    ggplotly(p) |> config(displayModeBar = FALSE)
+    ggplotly(p) |> layout(margin = list(l = 110)) |> config(displayModeBar = FALSE)
   })
 
   output$freshness <- renderUI({
@@ -240,7 +246,7 @@ server <- function(input, output, session) {
       geom_text(aes(x = last_obs, label = comma(obs)), hjust = -0.15, size = 3, color = "grey30") +
       scale_x_date(expand = expansion(mult = c(0.02, 0.14))) +
       labs(x = NULL, y = NULL, color = "Source") + theme_minimal(base_size = 11)
-    ggplotly(p, tooltip = "text") |> config(displayModeBar = FALSE)
+    ggplotly(p, tooltip = "text") |> layout(margin = list(l = 210)) |> config(displayModeBar = FALSE)
   })
 
   station_tbl <- reactive({ refresh(); Q(
@@ -313,8 +319,9 @@ server <- function(input, output, session) {
     cols <- c(working="#bdbdbd", in_review="#f0a202", reviewed="#4a90d9", approved="#1a9850", unspecified="#e6e6e6")
     p <- ggplot(d, aes(y = reorder(name, n, sum), x = n, fill = approval)) + geom_col() +
       scale_fill_manual(values = cols, drop = FALSE) + scale_x_continuous(labels = comma) +
-      labs(x = "data points", y = NULL, fill = "Approval") + theme_minimal(base_size = 11)
-    ggplotly(p) |> config(displayModeBar = FALSE)
+      labs(x = "data points", y = NULL, fill = "Approval") +
+      theme_minimal(base_size = 11) + theme(axis.text.y = element_text(size = 9))
+    ggplotly(p) |> layout(margin = list(l = 250)) |> config(displayModeBar = FALSE)
   })
 
   ona_audit <- reactive({
