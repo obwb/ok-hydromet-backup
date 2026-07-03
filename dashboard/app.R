@@ -100,7 +100,21 @@ ui <- page_navbar(
            plotlyOutput("ona_qaqc_plot", height = 620)),
       card(card_header("Project status"), uiOutput("ona_status_summary"))),
     card(card_header("Station audit — data points, record span, QAQC & freshness"), full_screen = TRUE,
-         DTOutput("ona_table"))),
+         DTOutput("ona_table")),
+
+    h5("By year", class = "mt-4 mb-2 text-secondary"),
+    card(card_header("Station reporting history — data points by station × year"), full_screen = TRUE,
+         plotlyOutput("ona_heatmap", height = 580)),
+    card(card_header("Network activity by year"), full_screen = TRUE,
+      layout_columns(
+        col_widths = c(6, 6),
+        plotlyOutput("ona_year_plot", height = 360),
+        DTOutput("ona_year_table")),
+      tags$small(class = "text-muted",
+        "* Field visits are estimated from the data record — telemetry gaps > 1 day ",
+        "(interruption → service visit → data resumes), de-duplicated per station-day. ",
+        "A proxy for maintenance/service events, not confirmed visits. ",
+        "Rating-curve status and QAQC approval await ingestion of AQUARIUS rating/approved-series data."))),
 
   # ---- Pipeline Health ----
   nav_panel(
@@ -227,7 +241,8 @@ server <- function(input, output, session) {
       ifelse(nrow(por), as.character(por$a), "—"), ifelse(nrow(por), as.character(por$b), "—")))
   })
 
-  output$tbl_coverage <- renderDT(datatable(cov(), rownames = FALSE, options = list(pageLength = 8, dom = "tp")))
+  output$tbl_coverage <- renderDT(datatable(cov(), rownames = FALSE, options = list(pageLength = 8, dom = "tp")) |>
+    formatRound("obs", digits = 0, mark = ","))
 
   # data-availability timeline: one bar per source × parameter × interval,
   # spanning first→last observation, labelled with the record count.
@@ -348,12 +363,60 @@ server <- function(input, output, session) {
     ona_audit()[, c("moe_id","name","params","series","points","first_obs","last_obs","pct_qaqc","days_stale","qaqc_status","freshness")],
     rownames = FALSE, filter = "top",
     colnames = c("MoE ID","Station","Parameters","Series","Data points","First","Last","% QAQC","Days stale","QAQC status","Freshness"),
-    options = list(pageLength = 15)))
+    options = list(pageLength = 15)) |> formatRound("points", digits = 0, mark = ","))
 
   output$dl_ona_audit <- downloadHandler(
     filename = function() sprintf("ona_station_audit_%s.csv", Sys.Date()),
     content = function(f) write.csv(ona_audit(), f, row.names = FALSE))
   outputOptions(output, "dl_ona_audit", suspendWhenHidden = FALSE)
+
+  # ---- ONA by-year summary ----
+  ona_year <- reactive({ refresh(); Q("
+    WITH obs AS (
+      SELECT st.station_uid, o.datetime_utc,
+        o.datetime_utc - lag(o.datetime_utc) OVER (PARTITION BY o.series_uid ORDER BY o.datetime_utc) gap
+      FROM okhydromet.observation o JOIN okhydromet.series s USING(series_uid)
+      JOIN okhydromet.station st USING(station_uid) WHERE o.source='bc'),
+    py AS (SELECT extract(year FROM datetime_utc)::int yr, count(DISTINCT station_uid) stations,
+                  count(*) points FROM obs GROUP BY 1),
+    vd AS (SELECT DISTINCT extract(year FROM datetime_utc)::int yr, station_uid, datetime_utc::date d
+           FROM obs WHERE gap > interval '1 day'),
+    v  AS (SELECT yr, count(*) visits FROM vd GROUP BY 1)
+    SELECT py.yr, py.stations, py.points, COALESCE(v.visits,0) visits
+    FROM py LEFT JOIN v USING(yr) ORDER BY py.yr") })
+
+  output$ona_year_plot <- renderPlotly({
+    d <- ona_year(); validate(need(nrow(d) > 0, "No data"))
+    dl <- rbind(data.frame(yr = d$yr, metric = "Stations reporting", n = d$stations),
+                data.frame(yr = d$yr, metric = "Field visits (proxy)", n = d$visits))
+    p <- ggplot(dl, aes(factor(yr), n, fill = metric)) + geom_col(position = "dodge") +
+      scale_fill_manual(values = c("Stations reporting" = OK_TEAL, "Field visits (proxy)" = "#e0a800")) +
+      labs(x = NULL, y = NULL, fill = NULL) + theme_minimal(base_size = 11)
+    ggplotly(p) |> layout(legend = list(orientation = "h", y = 1.12)) |> config(displayModeBar = FALSE)
+  })
+
+  output$ona_year_table <- renderDT({
+    d <- ona_year()
+    d$rating <- "pending"; d$qaqc <- "Provisional"
+    datatable(d[, c("yr","stations","points","visits","rating","qaqc")], rownames = FALSE,
+      colnames = c("Year","Stations","Data points","Field visits*","Rating","QAQC"),
+      options = list(pageLength = 20, dom = "t")) |>
+      formatRound("points", digits = 0, mark = ",")
+  })
+
+  output$ona_heatmap <- renderPlotly({
+    d <- Q("SELECT st.name, extract(year FROM o.datetime_utc)::int yr, count(*) points
+            FROM okhydromet.observation o JOIN okhydromet.series s USING(series_uid)
+            JOIN okhydromet.station st USING(station_uid) WHERE o.source='bc' GROUP BY 1,2")
+    validate(need(nrow(d) > 0, "No data"))
+    p <- ggplot(d, aes(factor(yr), reorder(name, points, sum), fill = points,
+                       text = sprintf("%s\n%d: %s points", name, yr, format(points, big.mark = ",")))) +
+      geom_tile(color = "white", linewidth = 0.4) +
+      scale_fill_gradient(low = "#d7efe9", high = OK_TEAL, trans = "log10", name = "points") +
+      labs(x = NULL, y = NULL) + theme_minimal(base_size = 10)
+    ggplotly(p, tooltip = "text") |> layout(margin = list(l = 230)) |> config(displayModeBar = FALSE)
+  })
+  outputOptions(output, "ona_heatmap", suspendWhenHidden = FALSE)
 
   # ---- downloads (read-only sharing) ----
   dl <- function(name, fn) downloadHandler(
