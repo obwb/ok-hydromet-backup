@@ -64,34 +64,22 @@ sched () {
       --http-method=POST --oauth-service-account-email="$SA"
   fi
 }
-sched okhydromet-daily  "0 4 * * *"  okhydromet-etl-daily     # 04:00 PT daily
-sched okhydromet-weekly "30 4 * * 1" okhydromet-etl-weekly    # 04:30 PT Mondays
+# ── Provincial (BC MoE public AQUARIUS export) job — MODE=provincial ──────────
+# No credentials needed (public CSV export). Reads data-raw/provincial_datasets.csv from the image.
+gcloud run jobs deploy okhydromet-etl-provincial --image="$IMG" --region="$REGION" --project="$PROJECT" \
+  --service-account="$SA" --set-cloudsql-instances="$CONN" \
+  --set-secrets="DB_PASS=okhydromet-db-pw:latest" \
+  --set-env-vars="MODE=provincial,DB_HOST=/cloudsql/${CONN},DB_NAME=okhydromet,DB_USER=okhydromet_app,RAW_MOUNT=/raw,AQ_DATERANGE=Days30" \
+  --add-volume=name=raw,type=cloud-storage,bucket=okhydromet-raw-ne1 \
+  --add-volume-mount=volume=raw,mount-path=/raw \
+  --max-retries=1 --task-timeout=1800 --memory=1Gi
+
+sched okhydromet-daily      "0 4 * * *"  okhydromet-etl-daily        # WSC realtime   — 04:00 PT daily
+sched okhydromet-weekly     "30 4 * * 1" okhydromet-etl-weekly       # WSC audit      — Mon 04:30 PT
+sched okhydromet-provincial "0 5 * * 1"  okhydromet-etl-provincial   # BC provincial  — Mon 05:00 PT
 
 echo
 echo "Deployed. Test now:  gcloud run jobs execute okhydromet-etl-daily --region=$REGION --project=$PROJECT --wait"
-
-# ── PROVINCIAL LEG ACTIVATION (run once BC MoE issues AQUARIUS API creds) ─────
-# The code (R/etl_provincial.R, MODE=provincial) already ships in the image. To turn it on:
-#
-# 1) Store the credentials as secrets (Montréal-pinned):
-#   printf '%s' "<AQ_USERNAME>" | gcloud secrets create okhydromet-aq-user --project=$PROJECT \
-#     --replication-policy=user-managed --locations=$REGION --data-file=-
-#   printf '%s' "<AQ_PASSWORD>" | gcloud secrets create okhydromet-aq-pass --project=$PROJECT \
-#     --replication-policy=user-managed --locations=$REGION --data-file=-
-#
-# 2) Deploy the provincial job (no rebuild needed — same image):
-#   gcloud run jobs deploy okhydromet-etl-provincial --image="$IMG" --region=$REGION --project=$PROJECT \
-#     --service-account="$SA" --set-cloudsql-instances="$CONN" \
-#     --set-secrets="DB_PASS=okhydromet-db-pw:latest,AQ_USER=okhydromet-aq-user:latest,AQ_PASS=okhydromet-aq-pass:latest" \
-#     --set-env-vars="MODE=provincial,DB_HOST=/cloudsql/$CONN,DB_NAME=okhydromet,DB_USER=okhydromet_app,AQ_SINCE_DAYS=3" \
-#     --max-retries=2 --task-timeout=1800 --memory=1Gi
-#
-# 3) First run: initial backfill with a wide window, then verify field-name VERIFY notes:
+# For a provincial full-history backfill, run once with a wide window:
 #   gcloud run jobs execute okhydromet-etl-provincial --region=$REGION --project=$PROJECT \
-#     --update-env-vars=AQ_SINCE_DAYS=3650 --wait
-#
-# 4) Schedule daily (04:15 PT):
-#   gcloud scheduler jobs create http okhydromet-provincial --location=$REGION --project=$PROJECT \
-#     --schedule="15 4 * * *" --time-zone="America/Vancouver" \
-#     --uri="https://$REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$PROJECT/jobs/okhydromet-etl-provincial:run" \
-#     --http-method=POST --oauth-service-account-email="$SA"
+#     --update-env-vars=AQ_DATERANGE=EntirePeriodOfRecord --wait

@@ -16,4 +16,5 @@ RUN Rscript -e 'install.packages("RPostgres", repos="https://cloud.r-project.org
 
 WORKDIR /app
 COPY R/ /app/R/
+COPY data-raw/ /app/data-raw/
 ENTRYPOINT ["Rscript", "R/run.R"]
