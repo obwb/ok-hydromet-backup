@@ -43,7 +43,7 @@ theme <- bs_theme(version = 5, primary = OK_TEAL, base_font = font_google("Inter
 
 # ── UI ───────────────────────────────────────────────────────────────────────
 ui <- page_navbar(
-  title = "Okanagan Hydrometric Backup", theme = theme, fillable = TRUE,
+  title = "Okanagan Hydrometric Backup", theme = theme, fillable = FALSE,
   header = tags$head(tags$style(HTML(sprintf(
     ".value-box{min-height:118px}.navbar-brand{font-weight:700}
      a{color:%s}.freshbar{height:8px;border-radius:4px}", OK_TEAL)))),
@@ -77,7 +77,7 @@ ui <- page_navbar(
       card(card_header("What's in the database"), htmlOutput("summary_text")),
       card(card_header("Coverage detail"), DTOutput("tbl_coverage"))),
     card(card_header("Data availability — source, record count & date range"), full_screen = TRUE,
-         plotlyOutput("plot_timeline", height = 300)),
+         plotlyOutput("plot_timeline", height = 360)),
     card(card_header("Station map — colour = data freshness"), full_screen = TRUE,
          leafletOutput("map", height = 420)),
     card(card_header("Stations"), full_screen = TRUE, DTOutput("tbl_stations"))),
@@ -169,9 +169,9 @@ server <- function(input, output, session) {
             GROUP BY 1 ORDER BY 1")
     validate(need(nrow(d) > 0, "No recent observations"))
     p <- ggplot(d, aes(d, n)) + geom_col(fill = OK_TEAL) +
-      scale_y_continuous(labels = comma) + labs(x = NULL, y = "obs / day") +
+      scale_y_continuous(labels = comma) + labs(x = NULL, y = NULL) +
       theme_minimal(base_size = 12)
-    ggplotly(p) |> layout(margin = list(l = 72, b = 46)) |> config(displayModeBar = FALSE)
+    ggplotly(p) |> layout(margin = list(l = 60, b = 40)) |> config(displayModeBar = FALSE)
   })
 
   # coverage by parameter
@@ -186,10 +186,10 @@ server <- function(input, output, session) {
     d <- cov() |> group_by(parameter) |> summarise(obs = sum(obs), .groups = "drop")
     lbl <- c(Q = "Discharge", H = "Stage", Tw = "Water temp", COND = "Conductivity")
     d$label <- ifelse(d$parameter %in% names(lbl), lbl[d$parameter], d$parameter)
-    p <- ggplot(d, aes(reorder(label, obs), obs, fill = label)) + geom_col() +
-      coord_flip() + scale_y_continuous(labels = comma) +
-      labs(x = NULL, y = "observations") + guides(fill = "none") + theme_minimal(base_size = 12)
-    ggplotly(p) |> layout(margin = list(l = 110)) |> config(displayModeBar = FALSE)
+    p <- ggplot(d, aes(x = obs, y = reorder(label, obs), fill = label)) + geom_col() +
+      scale_x_continuous(labels = comma) +
+      labs(x = "observations", y = NULL) + guides(fill = "none") + theme_minimal(base_size = 12)
+    ggplotly(p) |> layout(margin = list(l = 100)) |> config(displayModeBar = FALSE)
   })
 
   output$freshness <- renderUI({
