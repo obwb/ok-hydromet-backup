@@ -76,6 +76,26 @@ ui <- page_navbar(
          leafletOutput("map", height = 420)),
     card(card_header("Stations"), full_screen = TRUE, DTOutput("tbl_stations"))),
 
+  # ---- ONA Audit ----
+  nav_panel(
+    "ONA Audit", icon = icon("clipboard-check"),
+    div(class = "d-flex justify-content-between align-items-center mb-2",
+        h4("ONA / provincial monitoring network — audit & project status", class = "mt-2"),
+        downloadButton("dl_ona_audit", "Download audit report (CSV)", class = "btn-sm btn-primary")),
+    layout_columns(
+      fill = FALSE, col_widths = c(3,3,3,3),
+      value_box("ONA stations", textOutput("ona_n"), showcase = icon("location-dot"), theme = "primary"),
+      value_box("Data points", textOutput("ona_pts"), showcase = icon("database")),
+      value_box("QAQC reviewed/approved", textOutput("ona_qaqc"), showcase = icon("clipboard-check"), theme = "success"),
+      value_box("Most recent reading", textOutput("ona_latest"), showcase = icon("clock"))),
+    layout_columns(
+      col_widths = c(8, 4),
+      card(card_header("QAQC status by station — approval level of collected points"), full_screen = TRUE,
+           plotlyOutput("ona_qaqc_plot", height = 420)),
+      card(card_header("Project status"), uiOutput("ona_status_summary"))),
+    card(card_header("Station audit — data points, record span, QAQC & freshness"), full_screen = TRUE,
+         DTOutput("ona_table"))),
+
   # ---- Pipeline Health ----
   nav_panel(
     "Pipeline Health", icon = icon("heart-pulse"),
@@ -258,6 +278,75 @@ server <- function(input, output, session) {
     Q("SELECT audit_id, scope, stations_checked, discrepancies, run_ts::timestamp(0) run_ts
        FROM okhydromet.audit_log ORDER BY audit_id DESC LIMIT 25"),
     rownames = FALSE, options = list(pageLength = 5, dom = "tp")))
+
+  # ---- ONA / provincial audit ----
+  ona <- reactive({ refresh(); Q("
+    SELECT st.bc_aquarius_loc_id AS moe_id, st.name,
+      count(DISTINCT s.series_uid) series,
+      string_agg(DISTINCT s.parameter, ', ' ORDER BY s.parameter) params,
+      count(o.*) points,
+      min(o.datetime_utc)::date first_obs, max(o.datetime_utc)::date last_obs,
+      round(100.0*count(*) FILTER (WHERE o.approval_level IN ('approved','reviewed'))
+            / NULLIF(count(o.*),0), 1) pct_qaqc,
+      round(extract(epoch FROM now()-max(o.datetime_utc))/86400.0)::int days_stale
+    FROM okhydromet.station st
+    JOIN okhydromet.series s ON s.station_uid=st.station_uid
+    JOIN okhydromet.observation o ON o.series_uid=s.series_uid AND o.source='bc'
+    WHERE st.operator='BC'
+    GROUP BY 1,2 ORDER BY st.name") })
+
+  output$ona_n   <- renderText(nrow(ona()))
+  output$ona_pts <- renderText(fmt(sum(ona()$points)))
+  output$ona_qaqc <- renderText({ d <- ona(); if (!nrow(d)) return("—")
+    paste0(round(100*sum(d$points*ifelse(is.na(d$pct_qaqc),0,d$pct_qaqc)/100)/sum(d$points),1), "%") })
+  output$ona_latest <- renderText({ d <- ona(); if (nrow(d)) format(max(as.Date(d$last_obs)),"%Y-%m-%d") else "—" })
+
+  output$ona_qaqc_plot <- renderPlotly({
+    d <- Q("SELECT st.name, COALESCE(o.approval_level,'unspecified') approval, count(*) n
+            FROM okhydromet.station st
+            JOIN okhydromet.series s ON s.station_uid=st.station_uid
+            JOIN okhydromet.observation o ON o.series_uid=s.series_uid AND o.source='bc'
+            WHERE st.operator='BC' GROUP BY 1,2")
+    validate(need(nrow(d) > 0, "No ONA/provincial data loaded yet"))
+    lv <- c("working","in_review","reviewed","approved","unspecified")
+    d$approval <- factor(d$approval, levels = lv)
+    cols <- c(working="#bdbdbd", in_review="#f0a202", reviewed="#4a90d9", approved="#1a9850", unspecified="#e6e6e6")
+    p <- ggplot(d, aes(y = reorder(name, n, sum), x = n, fill = approval)) + geom_col() +
+      scale_fill_manual(values = cols, drop = FALSE) + scale_x_continuous(labels = comma) +
+      labs(x = "data points", y = NULL, fill = "Approval") + theme_minimal(base_size = 11)
+    ggplotly(p) |> config(displayModeBar = FALSE)
+  })
+
+  ona_audit <- reactive({
+    d <- ona(); if (!nrow(d)) return(d)
+    d$qaqc_status <- ifelse(is.na(d$pct_qaqc) | d$pct_qaqc < 10, "Provisional (working)",
+                     ifelse(d$pct_qaqc < 90, "Partially reviewed", "Approved"))
+    d$freshness <- ifelse(d$days_stale <= 2, "Current", ifelse(d$days_stale <= 14, "Recent", "Stale"))
+    d
+  })
+
+  output$ona_status_summary <- renderUI({
+    d <- ona_audit(); validate(need(nrow(d) > 0, "No data yet"))
+    HTML(sprintf("<ul class='mb-0'>
+      <li><b>%d</b> stations reporting</li>
+      <li><b>%s</b> parameter-series</li>
+      <li><b>%d</b> stations <span style='color:#777'>provisional</span> (not yet QAQC-approved)</li>
+      <li><b>%d</b> stations <span style='color:#d73027'>stale</span> (&gt;14 d)</li>
+      <li>Record spans <b>%s → %s</b></li></ul>",
+      nrow(d), sum(d$series), sum(d$qaqc_status == "Provisional (working)"),
+      sum(d$freshness == "Stale"), as.character(min(as.Date(d$first_obs))), as.character(max(as.Date(d$last_obs)))))
+  })
+
+  output$ona_table <- renderDT(datatable(
+    ona_audit()[, c("moe_id","name","params","series","points","first_obs","last_obs","pct_qaqc","days_stale","qaqc_status","freshness")],
+    rownames = FALSE, filter = "top",
+    colnames = c("MoE ID","Station","Parameters","Series","Data points","First","Last","% QAQC","Days stale","QAQC status","Freshness"),
+    options = list(pageLength = 15)))
+
+  output$dl_ona_audit <- downloadHandler(
+    filename = function() sprintf("ona_station_audit_%s.csv", Sys.Date()),
+    content = function(f) write.csv(ona_audit(), f, row.names = FALSE))
+  outputOptions(output, "dl_ona_audit", suspendWhenHidden = FALSE)
 
   # ---- downloads (read-only sharing) ----
   dl <- function(name, fn) downloadHandler(

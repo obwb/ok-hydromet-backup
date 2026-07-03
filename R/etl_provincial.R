@@ -57,10 +57,16 @@ for (i in seq_len(nrow(reg))) {
   if (is.null(d) || !nrow(d)) next
   archive_raw(sprintf("bc/%s-%s", r$moe_id, r$canon), run_id, d)   # immutable raw landing
 
-  dbExecute(con, "INSERT INTO okhydromet.station(station_uid,bc_aquarius_loc_id,name,operator,status,basin)
-    VALUES($1,$2,$3,'BC','active','Okanagan')
-    ON CONFLICT (station_uid) DO UPDATE SET bc_aquarius_loc_id=EXCLUDED.bc_aquarius_loc_id, name=EXCLUDED.name",
-    params = list(suid, r$moe_id, r$name))
+  dbExecute(con, "INSERT INTO okhydromet.station
+      (station_uid,bc_aquarius_loc_id,name,operator,status,basin,lat,lon,geom)
+    VALUES($1,$2,$3,'BC','active','Okanagan',$4::double precision,$5::double precision,
+      CASE WHEN $4::double precision IS NULL OR $5::double precision IS NULL THEN NULL
+           ELSE ST_SetSRID(ST_MakePoint($5::double precision,$4::double precision),4326) END)
+    ON CONFLICT (station_uid) DO UPDATE SET bc_aquarius_loc_id=EXCLUDED.bc_aquarius_loc_id,
+      name=EXCLUDED.name, lat=EXCLUDED.lat, lon=EXCLUDED.lon, geom=EXCLUDED.geom",
+    params = list(suid, r$moe_id, r$name,
+                  if (is.null(r$lat) || is.na(r$lat)) NA else as.numeric(r$lat),
+                  if (is.null(r$lon) || is.na(r$lon)) NA else as.numeric(r$lon)))
   dbExecute(con, "INSERT INTO okhydromet.series(series_uid,station_uid,parameter,units,interval,source_series_id)
     VALUES($1,$2,$3,$4,'instant',$5) ON CONFLICT (series_uid) DO NOTHING",
     params = list(series_uid, suid, r$canon, r$units, sprintf("%s.%s@%s", r$parameter, r$label, r$moe_id)))

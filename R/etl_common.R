@@ -18,6 +18,9 @@ pg_args <- function() {
   if (!startsWith(host, "/")) {                       # TCP (local): require SSL
     args$port    <- as.integer(Sys.getenv("DB_PORT", "5432"))
     args$sslmode <- Sys.getenv("DB_SSLMODE", "require")
+    for (k in c("sslrootcert", "sslcert", "sslkey")) {  # client-cert TLS if provided
+      v <- Sys.getenv(toupper(paste0("DB_", k))); if (nzchar(v)) args[[k]] <- v
+    }
   }
   args
 }
