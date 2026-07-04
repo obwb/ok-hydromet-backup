@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Okanagan Hydrometric Backup Database</title>
-<meta name="description" content="A sovereign, append-only backup of Okanagan-basin hydrometric data — Water Survey of Canada and BC provincial stations — hosted in Canada.">
+<meta name="description" content="A sovereign, append-only backup of Okanagan-basin hydrometric data — Water Survey of Canada, BC provincial surface stations and the groundwater observation well network — hosted in Canada.">
 <style>
   :root{
     --teal:#0b6b6b; --teal-d:#084f4f; --amber:#e0a800; --ink:#16323a;
@@ -74,25 +74,26 @@
   <div class="wrap">
     <span class="tag">OKANAGAN BASIN WATER BOARD · DATA STEWARDSHIP</span>
     <h1>Okanagan Hydrometric Backup Database</h1>
-    <p class="sub">An independent, sovereign backup of Okanagan-basin streamflow, water-level and
-      water-temperature data — so the region's water tools keep working, whatever happens upstream.</p>
+    <p class="sub">An independent, sovereign backup of Okanagan-basin streamflow, water-level,
+      water-temperature and groundwater data — so the region's water tools keep working, whatever happens upstream.</p>
     <a class="cta" href="https://obwb.shinyapps.io/ok-hydromet-backup/">Open the live dashboard →</a>
   </div>
 </header>
 
 <div class="wrap">
   <div class="stats">
-    <div class="stat"><b>2.8M+</b><span>observations</span></div>
-    <div class="stat"><b>50+</b><span>stations</span></div>
+    <div class="stat"><b>6.5M+</b><span>observations</span></div>
+    <div class="stat"><b>75+</b><span>stations &amp; wells</span></div>
+    <div class="stat"><b>26</b><span>groundwater wells</span></div>
     <div class="stat"><b>1915</b><span>earliest record</span></div>
-    <div class="stat"><b>Daily</b><span>updates</span></div>
   </div>
 
   <section>
     <h2>What it is</h2>
     <p>The Okanagan Basin Water Board maintains a continuously-updated mirror of the hydrometric data
-    for the Okanagan watershed. It brings together <strong>Water Survey of Canada</strong> gauges and
-    <strong>BC provincial / Okanagan Nation Alliance–serviced</strong> stations into one queryable
+    for the Okanagan watershed. It brings together <strong>Water Survey of Canada</strong> gauges,
+    <strong>BC provincial / Okanagan Nation Alliance–serviced</strong> stations and the
+    <strong>provincial groundwater observation well network</strong> into one queryable
     archive, with every value tagged by its source, quality grade and approval level.</p>
     <p>It exists as a <strong>resilience layer</strong>: if access to the provincial data warehouse is
     ever interrupted, OBWB's forecasting, drought and water-supply tools keep running from this backup.</p>
@@ -108,11 +109,12 @@
         <p>Automated jobs pull real-time data daily and run a weekly reconciliation audit that
         backfills any gaps against the source of record.</p></div>
       <div class="card"><h3>📏 Full provenance</h3>
-        <p>Discharge, stage and water temperature — each point carries its grade, approval level and
-        ingest history, plus rating and station metadata.</p></div>
+        <p>Discharge, stage, water temperature and groundwater level — each point carries its grade,
+        approval level and ingest history, plus rating and station metadata.</p></div>
       <div class="card"><h3>📚 Deep history</h3>
         <p>Daily records reach back to <strong>1915</strong> (discharge) and <strong>1943</strong>
-        (water level), alongside the live real-time feed.</p></div>
+        (water level), with groundwater levels to the <strong>1960s</strong>, alongside the live
+        real-time feed.</p></div>
     </div>
   </section>
 
@@ -121,7 +123,7 @@
     <p>The data is open. Explore it and download it from the live dashboard:</p>
     <ul>
       <li><a href="https://obwb.shinyapps.io/ok-hydromet-backup/">Interactive dashboard</a> — summary,
-        station map, freshness, ONA station audit, and pipeline status</li>
+        station map, freshness, groundwater wells, ONA station audit, and pipeline status</li>
       <li><strong>CSV downloads</strong> — stations, coverage, latest readings and the full daily record
         (on the dashboard's <em>Data Access</em> tab)</li>
       <li><strong>Read-only database access</strong> for analysts (SQL / R / Python) — available on
