@@ -46,7 +46,8 @@ ui <- page_navbar(
   title = "Okanagan Hydrometric Backup", theme = theme, fillable = FALSE,
   header = tags$head(tags$style(HTML(sprintf(
     ".value-box{min-height:118px}.navbar-brand{font-weight:700}
-     a{color:%s}.freshbar{height:8px;border-radius:4px}", OK_TEAL)))),
+     a{color:%s}.freshbar{height:8px;border-radius:4px}
+     .navbar{position:sticky;top:0;z-index:1030;background:#fff;border-bottom:1px solid #e4eded}", OK_TEAL)))),
 
   # ---- Dashboard ----
   nav_panel(
@@ -82,6 +83,29 @@ ui <- page_navbar(
          leafletOutput("map", height = 420)),
     card(card_header("Stations"), full_screen = TRUE, DTOutput("tbl_stations"))),
 
+  # ---- Groundwater ----
+  nav_panel(
+    "Groundwater", icon = icon("droplet"),
+    div(class = "d-flex justify-content-between align-items-center mb-2",
+        h4("BC provincial groundwater observation wells (PGOWN)", class = "mt-2"),
+        downloadButton("dl_gw", "Well summary (CSV)", class = "btn-sm btn-primary")),
+    layout_columns(
+      fill = FALSE, col_widths = c(3,3,3,3),
+      value_box("Wells", textOutput("gw_n"), showcase = icon("droplet"), theme = "primary"),
+      value_box("Water-level readings", textOutput("gw_pts"), showcase = icon("database")),
+      value_box("QAQC approved", textOutput("gw_appr"), showcase = icon("clipboard-check")),
+      value_box("Record spans", textOutput("gw_span"), showcase = icon("clock"))),
+    layout_columns(
+      col_widths = c(6, 6),
+      card(card_header("Well locations — colour = data freshness"), full_screen = TRUE,
+           leafletOutput("gw_map", height = 460)),
+      card(card_header("Wells — record span, readings & QAQC"), full_screen = TRUE,
+           DTOutput("gw_table"))),
+    tags$small(class = "text-muted",
+      "Static ground-water level (SGWL), metres — public AQUARIUS export from the BC provincial ",
+      "groundwater observation well network (PGOWN). Historical series are largely QAQC-approved; ",
+      "recent telemetry is provisional (working).")),
+
   # ---- ONA Audit ----
   nav_panel(
     "ONA Audit", icon = icon("clipboard-check"),
@@ -92,7 +116,7 @@ ui <- page_navbar(
       fill = FALSE, col_widths = c(3,3,3,3),
       value_box("ONA stations", textOutput("ona_n"), showcase = icon("location-dot"), theme = "primary"),
       value_box("Data points", textOutput("ona_pts"), showcase = icon("database")),
-      value_box("QAQC reviewed/approved", textOutput("ona_qaqc"), showcase = icon("clipboard-check"), theme = "success"),
+      value_box("QAQC reviewed/approved", textOutput("ona_qaqc"), showcase = icon("clipboard-check")),
       value_box("Most recent reading", textOutput("ona_latest"), showcase = icon("clock"))),
     layout_columns(
       col_widths = c(8, 4),
@@ -122,7 +146,7 @@ ui <- page_navbar(
     layout_columns(col_widths = c(4,4,4),
       value_box("Last successful run", textOutput("kpi_lastrun"), showcase = icon("circle-check"), theme = "success"),
       value_box("Runs (30 d)", textOutput("kpi_runs"), showcase = icon("arrows-rotate")),
-      value_box("Open discrepancies", textOutput("kpi_disc"), showcase = icon("triangle-exclamation"), theme = "warning")),
+      value_box("Open discrepancies", textOutput("kpi_disc"), showcase = icon("triangle-exclamation"))),
     card(card_header("Recent ingestion runs (pull_run)"), full_screen = TRUE, DTOutput("tbl_runs")),
     card(card_header("Weekly audit log"), full_screen = TRUE, DTOutput("tbl_audit"))),
 
@@ -198,7 +222,7 @@ server <- function(input, output, session) {
 
   output$plot_coverage <- renderPlotly({
     d <- cov() |> group_by(parameter) |> summarise(obs = sum(obs), .groups = "drop")
-    lbl <- c(Q = "Discharge", H = "Stage", Tw = "Water temp", COND = "Conductivity")
+    lbl <- c(Q = "Discharge", H = "Stage", Tw = "Water temp", COND = "Conductivity", GW = "Groundwater")
     d$label <- ifelse(d$parameter %in% names(lbl), lbl[d$parameter], d$parameter)
     p <- ggplot(d, aes(x = obs, y = reorder(label, obs), fill = label)) + geom_col() +
       scale_x_continuous(labels = comma) +
@@ -208,10 +232,13 @@ server <- function(input, output, session) {
 
   output$freshness <- renderUI({
     refresh()
-    d <- Q("SELECT o.source,
-              round(extract(epoch FROM now()-max(datetime_utc))/3600.0, 1) AS hours,
-              max(datetime_utc) AS latest
-            FROM okhydromet.observation o GROUP BY 1 ORDER BY 1")
+    d <- Q("SELECT CASE WHEN s.parameter='GW' THEN 'BC groundwater'
+                        WHEN o.source='bc'    THEN 'BC surface'
+                        ELSE upper(o.source) END AS source,
+              round(extract(epoch FROM now()-max(o.datetime_utc))/3600.0, 1) AS hours,
+              max(o.datetime_utc) AS latest
+            FROM okhydromet.observation o JOIN okhydromet.series s USING(series_uid)
+            GROUP BY 1 ORDER BY 1")
     if (!nrow(d)) return("No data")
     lapply(seq_len(nrow(d)), function(i) {
       h <- d$hours[i]; stale <- h > 48
@@ -233,7 +260,7 @@ server <- function(input, output, session) {
     HTML(sprintf(
       "<ul class='mb-0'>
         <li><b>%s observations</b> across <b>%s time series</b> at <b>%s stations</b></li>
-        <li>Parameters: discharge, stage, water temperature (as available)</li>
+        <li>Parameters: discharge, stage, groundwater level; water temperature as available</li>
         <li>Daily record spans <b>%s → %s</b></li>
         <li>Sources: Water Survey of Canada (federal); BC provincial as available</li>
         <li>Updated daily; weekly reconciliation audit</li>
@@ -249,7 +276,7 @@ server <- function(input, output, session) {
   output$plot_timeline <- renderPlotly({
     d <- cov()
     validate(need(nrow(d) > 0, "No data"))
-    plbl <- c(Q = "Discharge", H = "Stage", Tw = "Water temp", COND = "Conductivity")
+    plbl <- c(Q = "Discharge", H = "Stage", Tw = "Water temp", COND = "Conductivity", GW = "Groundwater")
     d$param <- ifelse(d$parameter %in% names(plbl), plbl[d$parameter], d$parameter)
     d$row <- sprintf("%s · %s (%s)", toupper(d$source), d$param, d$interval)
     d$first_obs <- as.Date(d$first_obs); d$last_obs <- as.Date(d$last_obs)
@@ -260,7 +287,7 @@ server <- function(input, output, session) {
       geom_segment(aes(x = first_obs, xend = last_obs, yend = row), linewidth = 5, lineend = "round") +
       geom_text(aes(x = last_obs, label = comma(obs)), hjust = -0.15, size = 3, color = "grey30") +
       scale_x_date(expand = expansion(mult = c(0.02, 0.14))) +
-      labs(x = NULL, y = NULL, color = "Source") + theme_minimal(base_size = 11)
+      labs(x = NULL, y = NULL, color = "Source") + theme_minimal(base_size = 12)
     ggplotly(p, tooltip = "text") |> layout(margin = list(l = 210)) |> config(displayModeBar = FALSE)
   })
 
@@ -293,7 +320,7 @@ server <- function(input, output, session) {
     Q("SELECT run_id, source, status, rows_in,
          started_ts::timestamp(0) started, finished_ts::timestamp(0) finished
        FROM okhydromet.pull_run ORDER BY run_id DESC LIMIT 50"),
-    rownames = FALSE, options = list(pageLength = 10)))
+    rownames = FALSE, options = list(pageLength = 10)) |> formatRound("rows_in", digits = 0, mark = ","))
 
   output$tbl_audit <- renderDT(datatable(
     Q("SELECT audit_id, scope, stations_checked, discrepancies, run_ts::timestamp(0) run_ts
@@ -313,7 +340,7 @@ server <- function(input, output, session) {
     FROM okhydromet.station st
     JOIN okhydromet.series s ON s.station_uid=st.station_uid
     JOIN okhydromet.observation o ON o.series_uid=s.series_uid AND o.source='bc'
-    WHERE st.operator='BC'
+    WHERE st.operator='BC' AND st.station_type IS DISTINCT FROM 'groundwater_well'
     GROUP BY 1,2 ORDER BY st.name") })
 
   output$ona_n   <- renderText(nrow(ona()))
@@ -327,7 +354,8 @@ server <- function(input, output, session) {
             FROM okhydromet.station st
             JOIN okhydromet.series s ON s.station_uid=st.station_uid
             JOIN okhydromet.observation o ON o.series_uid=s.series_uid AND o.source='bc'
-            WHERE st.operator='BC' GROUP BY 1,2")
+            WHERE st.operator='BC' AND st.station_type IS DISTINCT FROM 'groundwater_well'
+            GROUP BY 1,2")
     validate(need(nrow(d) > 0, "No ONA/provincial data loaded yet"))
     lv <- c("working","in_review","reviewed","approved","unspecified")
     d$approval <- factor(d$approval, levels = lv)
@@ -335,7 +363,7 @@ server <- function(input, output, session) {
     p <- ggplot(d, aes(y = reorder(name, n, sum), x = n, fill = approval)) + geom_col() +
       scale_fill_manual(values = cols, drop = FALSE) + scale_x_continuous(labels = comma) +
       labs(x = "data points", y = NULL, fill = "Approval") +
-      theme_minimal(base_size = 11) + theme(axis.text.y = element_text(size = 9))
+      theme_minimal(base_size = 12) + theme(axis.text.y = element_text(size = 11))
     ggplotly(p) |> layout(margin = list(l = 250)) |> config(displayModeBar = FALSE)
   })
 
@@ -376,7 +404,8 @@ server <- function(input, output, session) {
       SELECT st.station_uid, o.datetime_utc,
         o.datetime_utc - lag(o.datetime_utc) OVER (PARTITION BY o.series_uid ORDER BY o.datetime_utc) gap
       FROM okhydromet.observation o JOIN okhydromet.series s USING(series_uid)
-      JOIN okhydromet.station st USING(station_uid) WHERE o.source='bc'),
+      JOIN okhydromet.station st USING(station_uid)
+      WHERE o.source='bc' AND st.station_type IS DISTINCT FROM 'groundwater_well'),
     py AS (SELECT extract(year FROM datetime_utc)::int yr, count(DISTINCT station_uid) stations,
                   count(*) points FROM obs GROUP BY 1),
     vd AS (SELECT DISTINCT extract(year FROM datetime_utc)::int yr, station_uid, datetime_utc::date d
@@ -391,7 +420,7 @@ server <- function(input, output, session) {
                 data.frame(yr = d$yr, metric = "Field visits (proxy)", n = d$visits))
     p <- ggplot(dl, aes(factor(yr), n, fill = metric)) + geom_col(position = "dodge") +
       scale_fill_manual(values = c("Stations reporting" = OK_TEAL, "Field visits (proxy)" = "#e0a800")) +
-      labs(x = NULL, y = NULL, fill = NULL) + theme_minimal(base_size = 11)
+      labs(x = NULL, y = NULL, fill = NULL) + theme_minimal(base_size = 12)
     ggplotly(p) |> layout(legend = list(orientation = "h", y = 1.12)) |> config(displayModeBar = FALSE)
   })
 
@@ -400,23 +429,68 @@ server <- function(input, output, session) {
     d$rating <- "pending"; d$qaqc <- "Provisional"
     datatable(d[, c("yr","stations","points","visits","rating","qaqc")], rownames = FALSE,
       colnames = c("Year","Stations","Data points","Field visits*","Rating","QAQC"),
-      options = list(pageLength = 20, dom = "t")) |>
+      options = list(dom = "t", paging = FALSE, scrollY = "330px", scrollCollapse = TRUE)) |>
       formatRound("points", digits = 0, mark = ",")
   })
 
   output$ona_heatmap <- renderPlotly({
     d <- Q("SELECT st.name, extract(year FROM o.datetime_utc)::int yr, count(*) points
             FROM okhydromet.observation o JOIN okhydromet.series s USING(series_uid)
-            JOIN okhydromet.station st USING(station_uid) WHERE o.source='bc' GROUP BY 1,2")
+            JOIN okhydromet.station st USING(station_uid)
+            WHERE o.source='bc' AND st.station_type IS DISTINCT FROM 'groundwater_well' GROUP BY 1,2")
     validate(need(nrow(d) > 0, "No data"))
     p <- ggplot(d, aes(factor(yr), reorder(name, points, sum), fill = points,
                        text = sprintf("%s\n%d: %s points", name, yr, format(points, big.mark = ",")))) +
       geom_tile(color = "white", linewidth = 0.4) +
       scale_fill_gradient(low = "#d7efe9", high = OK_TEAL, trans = "log10", name = "points") +
-      labs(x = NULL, y = NULL) + theme_minimal(base_size = 10)
+      labs(x = NULL, y = NULL) + theme_minimal(base_size = 12)
     ggplotly(p, tooltip = "text") |> layout(margin = list(l = 230)) |> config(displayModeBar = FALSE)
   })
   outputOptions(output, "ona_heatmap", suspendWhenHidden = FALSE)
+
+  # ---- Groundwater (BC PGOWN observation wells) ----
+  gw <- reactive({ refresh(); Q("
+    SELECT st.bc_aquarius_loc_id AS well, st.name, st.lat, st.lon,
+      count(o.*) points, min(o.datetime_utc)::date first_obs, max(o.datetime_utc)::date last_obs,
+      round(100.0*count(*) FILTER (WHERE o.approval_level='approved')/NULLIF(count(o.*),0),1) pct_approved,
+      round(extract(epoch FROM now()-max(o.datetime_utc))/86400.0)::int days_stale
+    FROM okhydromet.station st
+    JOIN okhydromet.series s ON s.station_uid=st.station_uid
+    JOIN okhydromet.observation o ON o.series_uid=s.series_uid
+    WHERE st.station_type='groundwater_well'
+    GROUP BY 1,2,3,4 ORDER BY st.name") })
+
+  output$gw_n    <- renderText(nrow(gw()))
+  output$gw_pts  <- renderText(fmt(sum(gw()$points)))
+  output$gw_appr <- renderText({ d <- gw(); if (!nrow(d)) return("—")
+    paste0(round(100*sum(d$points*ifelse(is.na(d$pct_approved),0,d$pct_approved)/100)/sum(d$points),1), "%") })
+  output$gw_span <- renderText({ d <- gw(); if (!nrow(d)) return("—")
+    paste(format(min(as.Date(d$first_obs)),"%Y"), "→", format(max(as.Date(d$last_obs)),"%Y")) })
+
+  output$gw_map <- renderLeaflet({
+    d <- gw() |> filter(!is.na(lat), !is.na(lon))
+    validate(need(nrow(d) > 0, "No groundwater wells loaded"))
+    pal <- function(h) ifelse(is.na(h), "#999", ifelse(h <= 14, "#1a9850", ifelse(h <= 180, "#f0a202", "#d73027")))
+    leaflet(d) |> addProviderTiles(providers$CartoDB.Positron) |>
+      addCircleMarkers(~lon, ~lat, radius = 6, color = ~pal(days_stale), fillOpacity = 0.85, stroke = FALSE,
+        popup = ~sprintf("<b>%s</b><br>%s<br>%s readings | %s → %s<br>%s%% approved",
+                         name, well, format(points, big.mark = ","), first_obs, last_obs,
+                         ifelse(is.na(pct_approved), 0, pct_approved))) |>
+      addLegend("bottomright", colors = c("#1a9850","#f0a202","#d73027"),
+                labels = c("current (< 14 d)","dormant (< 6 mo)","historical (> 6 mo)"), title = "Freshness")
+  })
+  outputOptions(output, "gw_map", suspendWhenHidden = FALSE)
+
+  output$gw_table <- renderDT(datatable(
+    gw()[, c("well","name","points","first_obs","last_obs","pct_approved","days_stale")],
+    rownames = FALSE, filter = "top",
+    colnames = c("Well","Name","Readings","First","Last","% approved","Days stale"),
+    options = list(pageLength = 10)) |> formatRound("points", digits = 0, mark = ","))
+
+  output$dl_gw <- downloadHandler(
+    filename = function() sprintf("okhydromet_groundwater_wells_%s.csv", Sys.Date()),
+    content = function(f) write.csv(gw(), f, row.names = FALSE))
+  outputOptions(output, "dl_gw", suspendWhenHidden = FALSE)
 
   # ---- downloads (read-only sharing) ----
   dl <- function(name, fn) downloadHandler(
@@ -445,10 +519,12 @@ server <- function(input, output, session) {
 port      = 5432
 database  = okhydromet
 user      = okhydromet_read   (SELECT-only)
-sslmode   = require</pre>
-     <p class='text-muted small'>Password issued on request (OBWB Water Stewardship). The role can
-      only run <code>SELECT</code> against the <code>okhydromet</code> schema. For open reuse, prefer
-      the CSV downloads above. A public read-only REST endpoint (PostgREST) is planned.</p>",
+sslmode   = verify-ca         (client certificate required)</pre>
+     <p class='text-muted small'>A password <b>and a client TLS certificate</b> are issued together on
+      request (OBWB Water Stewardship) — the instance requires a client certificate, so credentials and
+      cert files are provided as a set. The role can only run <code>SELECT</code> against the
+      <code>okhydromet</code> schema. For open reuse, prefer the CSV downloads above. A public read-only
+      REST endpoint (PostgREST) is planned.</p>",
     Sys.getenv("DB_PUBLIC_HOST", "34.95.1.176"))))
 
   output$about <- renderUI(HTML(sprintf(
@@ -462,7 +538,8 @@ sslmode   = require</pre>
        <li><b>Store:</b> PostgreSQL + PostGIS on Google Cloud SQL, <b>Montréal (northamerica-northeast1)</b>
          — all data resident in Canada (sovereignty).</li>
        <li><b>Ingestion:</b> containerised R jobs on Cloud Run pull from the ECCC GeoMet API (realtime)
-         and HYDAT (history); a provincial AQUARIUS leg adds water temperature + provincial stations.</li>
+         and HYDAT (history); a provincial AQUARIUS leg adds BC provincial / ONA-serviced surface
+         stations plus the provincial groundwater observation well network (PGOWN).</li>
        <li><b>Schedule:</b> daily incremental pull; weekly reconciliation audit that backfills gaps.</li>
        <li><b>Provenance:</b> every value is tagged with its source, grade, approval level and ingest run.</li>
      </ul>
