@@ -9,6 +9,43 @@ suppressMessages({
   library(DT); library(leaflet); library(dplyr); library(ggplot2); library(plotly); library(scales)
 })
 
+# --- basemap ----------------------------------------------------------------
+# CARTO now stamps "API KEY REQUIRED / carto.com/basemaps/apikey" diagonally
+# across every CartoDB.Positron tile. Nothing catches this automatically: the
+# request returns HTTP 200, content-type image/png, a valid 256x256 PNG of the
+# CORRECT geography, about 10 kB. The demand is painted into the raster, so a
+# status check, a size check and a content-type check all pass while the map
+# reads "API KEY REQUIRED" across Kelowna. Verify a tile source by LOOKING at
+# a tile.
+#
+# Esri Light Gray Canvas replaces it: no key, no account, free with attribution.
+#
+# TWO layers, not one. Positron baked place labels into a single tile; Esri
+# ships the grey base and the labels as separate services. The labels go on as
+# a second tile layer in the SAME group, because a baseGroup shows and hides
+# everything in it together, and second so they draw on top. Without them the
+# map has no place names, and people orient by Kelowna and Vernon.
+#
+# maxNativeZoom = 16 is load-bearing. World_Light_Gray_Base stops at zoom 16
+# where Positron went to 20, so without it the basemap goes blank the moment
+# anyone zooms past 16. Leaflet upscales the z16 tile instead.
+ESRI_GRAY_LABELS <- paste0(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/",
+  "World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}")
+
+add_gray_basemap <- function(m, group = NULL) {
+  m |>
+    leaflet::addProviderTiles(
+      "Esri.WorldGrayCanvas", group = group,
+      options = leaflet::providerTileOptions(maxNativeZoom = 16, maxZoom = 18)) |>
+    # Esri tile paths are {z}/{y}/{x}, not the XYZ {z}/{x}/{y}. attribution
+    # stays NULL: addProviderTiles above already credits Esri, and repeating it
+    # prints the same line twice in the corner.
+    leaflet::addTiles(
+      urlTemplate = ESRI_GRAY_LABELS, attribution = NULL, group = group,
+      options = leaflet::tileOptions(maxNativeZoom = 16, maxZoom = 18))
+}
+
 # DB connection config: env vars (local/Cloud Run) or a bundled, git-ignored
 # db_config.R (shinyapps.io, which can't set env vars). Read-only SELECT user.
 if (file.exists("db_config.R")) source("db_config.R", local = TRUE)
@@ -307,7 +344,7 @@ server <- function(input, output, session) {
     d <- station_tbl() |> filter(!is.na(lat), !is.na(lon))
     d$hrs <- as.numeric(difftime(Sys.time(), d$latest, units = "hours"))
     pal <- function(h) ifelse(is.na(h), "#999", ifelse(h <= 26, "#1a9850", ifelse(h <= 48, "#f0a202", "#d73027")))
-    leaflet(d) |> addProviderTiles(providers$CartoDB.Positron) |>
+    leaflet(d) |> add_gray_basemap() |>
       addCircleMarkers(~lon, ~lat, radius = 6, color = ~pal(hrs), fillOpacity = 0.85, stroke = FALSE,
         popup = ~sprintf("<b>%s</b><br>%s | %s<br>obs: %s<br>latest: %s",
                          name, station_uid, operator, format(obs, big.mark=","),
@@ -471,7 +508,7 @@ server <- function(input, output, session) {
     d <- gw() |> filter(!is.na(lat), !is.na(lon))
     validate(need(nrow(d) > 0, "No groundwater wells loaded"))
     pal <- function(h) ifelse(is.na(h), "#999", ifelse(h <= 14, "#1a9850", ifelse(h <= 180, "#f0a202", "#d73027")))
-    leaflet(d) |> addProviderTiles(providers$CartoDB.Positron) |>
+    leaflet(d) |> add_gray_basemap() |>
       addCircleMarkers(~lon, ~lat, radius = 6, color = ~pal(days_stale), fillOpacity = 0.85, stroke = FALSE,
         popup = ~sprintf("<b>%s</b><br>%s<br>%s readings | %s → %s<br>%s%% approved",
                          name, well, format(points, big.mark = ","), first_obs, last_obs,
